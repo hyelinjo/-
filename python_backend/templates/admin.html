@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>관리자 페이지 - 일정 관리</title>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; background-color: #333; color:white; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; color:#333; padding:20px; border-radius:10px; }
+        .admin-header { background: #d32f2f; color: white; padding: 15px; margin: -20px -20px 20px -20px; border-radius: 10px 10px 0 0; display:flex; justify-content: space-between; align-items: center; }
+        .region-btn { padding: 10px 20px; border: 1px solid #ccc; background: #eee; cursor: pointer; border-radius: 5px; margin-right: 5px; }
+        .region-btn.active { background: #d32f2f; color: white; border-color: #b71c1c; }
+        .btn-download { background-color: #2e7d32; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        
+        /* 교육 주제 관리 스타일 */
+        .topic-manager { margin: 20px 0; padding: 15px; background: #f9f9f9; border: 1px solid #eee; border-radius: 5px; display: none; }
+        .topic-input-group { display: flex; gap: 5px; margin-bottom: 10px; }
+        .topic-list { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; max-width: 400px; }
+        .topic-item { 
+            background: #e3f2fd; padding: 10px; border-radius: 5px; border: 1px solid #90caf9; 
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: grab; transition: background 0.2s;
+        }
+        .topic-item:active { cursor: grabbing; background: #bbdefb; }
+        .topic-item.dragging { opacity: 0.5; border: 2px dashed #2196f3; }
+        .topic-content { display: flex; align-items: center; gap: 10px; }
+        .drag-handle { color: #888; cursor: grab; font-size: 1.2em; }
+        .btn-del-topic { cursor: pointer; color: red; font-weight: bold; padding: 0 5px; }
+
+        /* 수정 모달 스타일 */
+        .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 25px; width: 450px; border-radius: 10px; position: relative; }
+        .close { position: absolute; right: 20px; top: 15px; font-size: 28px; cursor: pointer; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        .form-group select, .form-group input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        .btn-update { width: 100%; background-color: #2196f3; color: white; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 10px; }
+        .btn-delete { width: 100%; background-color: #f44336; color: white; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 10px; }
+        
+        .fc-toolbar-chunk .fc-button { background-color: #37474f; border: none; }
+        .fc-toolbar-chunk .fc-button:hover { background-color: #263238; }
+        .fc-toolbar-title { margin: 0 15px !important; font-weight: bold; font-size: 1.5em; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="admin-header">
+        <h2 style="margin:0;">🛠️ 관리자 모드</h2>
+        <div>
+            <span id="current-info">권역을 선택하세요</span>
+            <button onclick="location.href='/api/logout'" style="margin-left:10px; padding:5px; font-size:0.8em;">로그아웃</button>
+        </div>
+    </div>
+
+    <div style="margin-bottom: 20px;" id="region-nav"></div>
+
+    <div id="topicManager" class="topic-manager">
+        <h4>📚 교육 주제 관리 (드래그하여 순서 변경 가능)</h4>
+        <div class="topic-input-group">
+            <input type="text" id="newTopicTitle" placeholder="새로운 교육 주제 입력" style="padding:5px; width:250px;">
+            <button onclick="addTopic()" style="padding:5px 10px; cursor:pointer;">추가</button>
+        </div>
+        <div id="topicList" class="topic-list"></div>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+        <a href="/download_excel"><button class="btn-download">📥 전체 일정 엑셀 다운로드</button></a>
+    </div>
+
+    <div id='calendar'></div>
+</div>
+
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3>일정 수정 / 삭제</h3>
+        <input type="hidden" id="edit-id">
+        <div class="form-group"><label>교육 주제</label><select id="edit-topic"></select></div>
+        <div class="form-group"><label>기관(루키센터) 명</label><input type="text" id="edit-center"></div>
+        <div class="form-group" style="display:flex; gap:10px;">
+            <div style="flex:1;"><label>시작 시간</label><input type="time" id="edit-start-time"></div>
+            <div style="flex:1;"><label>마침 시간</label><input type="time" id="edit-end-time"></div>
+        </div>
+        <div class="form-group"><label>신청자 성명</label><input type="text" id="edit-applicant"></div>
+        <div class="form-group"><label>연락처</label><input type="text" id="edit-contact"></div>
+        <button class="btn-update" onclick="updateSchedule()">수정 내용 저장</button>
+        <button class="btn-delete" onclick="deleteSchedule()">일정 삭제</button>
+    </div>
+</div>
+
+<script>
+    const regions = [
+        { code: 'gangbuk', name: '강북', manager: '김현진' },
+        { code: 'gangnam', name: '강남', manager: '임은호' },
+        { code: 'gyeongin', name: '경인', manager: '윤성준' },
+        { code: 'busan', name: '부산', manager: '조혜린' },
+        { code: 'jungbu', name: '중부', manager: '최장민' },
+        { code: 'daegu', name: '대구', manager: '김줄기' },
+        { code: 'honam', name: '호남', manager: '김경보' }
+    ];
+
+    let calendar;
+    let currentRegionCode = null;
+    let selectedEventDate = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const nav = document.getElementById('region-nav');
+        regions.forEach(r => {
+            const btn = document.createElement('button');
+            btn.className = 'region-btn';
+            btn.innerText = r.name;
+            btn.onclick = () => loadRegion(r, btn);
+            nav.appendChild(btn);
+        });
+        initCalendar();
+    });
+
+    function loadRegion(region, btnElement) {
+        currentRegionCode = region.code;
+        document.getElementById('current-info').innerText = `${region.name} (${region.manager}) 관리 중`;
+        document.querySelectorAll('.region-btn').forEach(b => b.classList.remove('active'));
+        btnElement.classList.add('active');
+        
+        loadTopics();
+        document.getElementById('topicManager').style.display = 'block';
+        calendar.refetchEvents();
+    }
+
+    function loadTopics() { if (!currentRegionCode) return; fetch(`/api/topics?region=${currentRegionCode}`).then(res=>res.json()).then(data=>{const list=document.getElementById('topicList');list.innerHTML='';data.forEach(t=>{const item=document.createElement('div');item.className='topic-item';item.draggable=true;item.dataset.id=t.id;item.innerHTML=`<div class="topic-content"><span class="drag-handle">☰</span><span>${t.title}</span></div><span class="btn-del-topic" onclick="deleteTopic(${t.id})">&times;</span>`;addDragEvents(item);list.appendChild(item);});});}
+    function addDragEvents(item){const list=document.getElementById('topicList');item.addEventListener('dragstart',()=>{item.classList.add('dragging')});item.addEventListener('dragend',()=>{item.classList.remove('dragging');saveOrder()});list.addEventListener('dragover',(e)=>{e.preventDefault();const after=getDragAfterElement(list,e.clientY);const drag=document.querySelector('.dragging');if(after==null)list.appendChild(drag);else list.insertBefore(drag,after)});}
+    function getDragAfterElement(c,y){const els=[...c.querySelectorAll('.topic-item:not(.dragging)')];return els.reduce((closest,child)=>{const box=child.getBoundingClientRect();const offset=y-box.top-box.height/2;if(offset<0&&offset>closest.offset)return{offset:offset,element:child};else return closest},{offset:Number.NEGATIVE_INFINITY}).element}
+    function saveOrder(){const items=document.querySelectorAll('.topic-item');const ids=Array.from(items).map(i=>i.dataset.id);fetch('/api/topic/reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})})}
+    function addTopic(){const t=document.getElementById('newTopicTitle').value;if(!t)return;fetch('/api/topic/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({region:currentRegionCode,title:t})}).then(res=>res.json()).then(()=>{document.getElementById('newTopicTitle').value='';loadTopics()})}
+    function deleteTopic(id){if(!confirm("삭제?"))return;fetch('/api/topic/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})}).then(()=>loadTopics())}
+
+    function initCalendar() {
+        var calendarEl = document.getElementById('calendar');
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            locale: 'ko',
+            height: 'auto',
+            selectable: true,
+            headerToolbar: { left: 'today', center: 'prev title next', right: '' },
+            buttonText: { prev: '<', next: '>' },
+            
+            events: function(info, successCallback) {
+                if (!currentRegionCode) { successCallback([]); return; }
+                fetch('/api/events').then(res=>res.json()).then(events=>{
+                    const filtered = events.filter(e => {
+                        if(e.extendedProps.type === 'holiday') {
+                            return e.extendedProps.region === 'all' || e.extendedProps.region === currentRegionCode;
+                        }
+                        return e.extendedProps.region === currentRegionCode;
+                    });
+                    successCallback(filtered);
+                });
+            },
+
+            // 휴일 추가 (일괄 적용 기능 포함)
+            select: function(info) {
+                if(!currentRegionCode) { alert("권역을 먼저 선택하세요."); return; }
+                
+                const title = prompt(`[${info.startStr}] 휴무/대체휴일 사유 입력:`);
+                if(title) {
+                    const isGlobal = confirm(`"${title}" 일정을 모든 권역에 일괄 적용하시겠습니까?\n\n[확인] : 7개 전 권역 일괄 적용\n[취소] : 현재(${currentRegionCode}) 권역만 적용`);
+                    const regionVal = isGlobal ? 'all' : currentRegionCode;
+
+                    fetch('/api/add_holiday', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({title:title, start:info.startStr, region:regionVal})
+                    }).then(res=>res.json()).then(()=>{
+                        alert(isGlobal ? "전체 권역 적용 완료" : "현재 권역 적용 완료");
+                        calendar.refetchEvents();
+                    });
+                }
+                calendar.unselect();
+            },
+
+            // [수정된 부분] 이벤트 클릭 핸들러
+            eventClick: function(info) {
+                const props = info.event.extendedProps;
+                
+                // 1. 휴일 클릭 시 삭제 (취소) 로직
+                if(props.type === 'holiday') {
+                    // 삭제 확인 메시지
+                    const msg = `[휴일 취소]\n\n'${info.event.title}'\n\n이 휴일을 정말 삭제(취소)하시겠습니까?`;
+                    
+                    if(confirm(msg)) {
+                        fetch('/api/delete', {
+                            method: 'POST', 
+                            headers: {'Content-Type':'application/json'},
+                            body: JSON.stringify({
+                                id: info.event.id, 
+                                type: 'holiday' // 타입을 명시해서 서버가 휴일 테이블에서 삭제하도록 함
+                            })
+                        }).then(res => res.json()).then(data => {
+                            if(data.status === 'success') {
+                                alert("휴일이 삭제(취소)되었습니다.");
+                                calendar.refetchEvents();
+                            } else {
+                                alert("삭제 실패: " + data.message);
+                            }
+                        });
+                    }
+                    return; // 휴일인 경우 아래의 일반 수정 모달을 열지 않음
+                }
+
+                // 2. 일반 일정 클릭 시 수정 모달 오픈
+                openEditModal(info.event);
+            }
+        });
+        calendar.render();
+    }
+
+    function openEditModal(event) {
+        const props = event.extendedProps;
+        selectedEventDate = event.startStr.split('T')[0];
+        document.getElementById('edit-id').value = event.id;
+        document.getElementById('edit-center').value = props.center;
+        document.getElementById('edit-applicant').value = props.applicant;
+        document.getElementById('edit-contact').value = props.contact;
+        const startT = event.start.toTimeString().substring(0,5);
+        const endT = event.end.toTimeString().substring(0,5);
+        document.getElementById('edit-start-time').value = startT;
+        document.getElementById('edit-end-time').value = endT;
+        const topicSelect = document.getElementById('edit-topic'); topicSelect.innerHTML = '';
+        fetch(`/api/topics?region=${currentRegionCode}`).then(res=>res.json()).then(data=>{data.forEach(t=>{const opt=document.createElement('option');opt.value=t.title;opt.innerText=t.title;if(t.title===props.topic)opt.selected=true;topicSelect.appendChild(opt);});});
+        document.getElementById('editModal').style.display = 'block';
+    }
+    function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
+    function updateSchedule() {
+        const id=document.getElementById('edit-id').value; const topic=document.getElementById('edit-topic').value; const center=document.getElementById('edit-center').value; const applicant=document.getElementById('edit-applicant').value; const contact=document.getElementById('edit-contact').value; const startT=document.getElementById('edit-start-time').value; const endT=document.getElementById('edit-end-time').value;
+        if(startT>=endT){alert("시간 오류");return;}
+        fetch('/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,topic:topic,center:center,applicant:applicant,contact:contact,start:`${selectedEventDate}T${startT}`,end:`${selectedEventDate}T${endT}`})}).then(res=>res.json()).then(data=>{if(data.status==='success'){alert("수정 완료");closeEditModal();calendar.refetchEvents();}else{alert(data.message);}});
+    }
+    function deleteSchedule() {
+        const id=document.getElementById('edit-id').value; if(!confirm("삭제?"))return;
+        fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,pwd:'admin1234'})}).then(res=>res.json()).then(data=>{alert("삭제 완료");closeEditModal();calendar.refetchEvents();});
+    }
+</script>
+</body>
+</html>

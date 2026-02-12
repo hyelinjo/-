@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>디지털교육 일정 예약</title>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+    <style>
+        /* 기존 스타일 유지 */
+        body { font-family: 'Malgun Gothic', sans-serif; padding: 20px; background-color: #f4f6f8; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        #region-selector { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; }
+        .region-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; width: 100%; max-width: 800px; }
+        .region-card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #eee; }
+        .region-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); border-color: #3b82f6; }
+        .region-name { font-size: 1.5em; font-weight: bold; color: #333; margin-bottom: 10px; }
+        .manager-name { color: #666; font-size: 1em; }
+        #calendar-view { display: none; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn-back { background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+        .fc-day-sat a { color: blue; }
+        .fc-day-sun a { color: red; }
+        
+        .fc-toolbar-chunk .fc-button { background-color: #37474f; border: none; }
+        .fc-toolbar-chunk .fc-button:hover { background-color: #263238; }
+        .fc-toolbar-title { margin: 0 15px !important; font-weight: bold; font-size: 1.5em; }
+
+        .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 25px; width: 450px; border-radius: 10px; position: relative; }
+        .close { position: absolute; right: 20px; top: 15px; font-size: 28px; cursor: pointer; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; }
+        .form-group select, .form-group input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+        .btn-submit { width: 100%; background-color: #007bff; color: white; padding: 12px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 10px; }
+        .hidden-input { display: none; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="region-selector">
+        <h2 style="margin-bottom: 40px; color: #333;">예약할 권역을 선택해주세요</h2>
+        <div class="region-grid" id="region-list"></div>
+    </div>
+
+    <div id="calendar-view">
+        <div class="top-bar">
+            <h3 id="current-region-title" style="margin:0;"></h3>
+            <button class="btn-back" onclick="resetRegion()">← 권역 다시 선택</button>
+        </div>
+        <div id='calendar'></div>
+    </div>
+</div>
+
+<div id="bookingModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeModal()">&times;</span>
+        <h3 id="modalDateTitle">일정 예약</h3>
+        <div class="form-group"><label>교육 주제 (내용)</label><select id="topic"><option value="">선택하세요</option></select></div>
+        <div class="form-group"><label>기관(루키센터) 명</label><select id="center" onchange="toggleDirectInput('center', 'center-direct')"></select><input type="text" id="center-direct" class="hidden-input" placeholder="직접 입력"></div>
+        <div class="form-group" style="display:flex; gap:10px;">
+            <div style="flex:1;"><label>시작 시간</label><select id="start-time" onchange="toggleDirectInput('start-time', 'start-time-direct')"></select><input type="time" id="start-time-direct" class="hidden-input"></div>
+            <div style="flex:1;"><label>마침 시간</label><select id="end-time" onchange="toggleDirectInput('end-time', 'end-time-direct')"></select><input type="time" id="end-time-direct" class="hidden-input"></div>
+        </div>
+        <div class="form-group"><label>신청자 성명</label><input type="text" id="applicant" placeholder="성명 입력"></div>
+        <div class="form-group"><label>연락처</label><input type="tel" id="contact" placeholder="010-XXXX-XXXX"></div>
+        <div class="form-group"><label>비밀번호 (숫자 4자리)</label><input type="number" id="pwd" maxlength="4" placeholder="삭제 시 필요" oninput="if(this.value.length>4) this.value=this.value.slice(0,4);"></div>
+        <button class="btn-submit" onclick="submitSchedule()">예약하기</button>
+    </div>
+</div>
+
+<script>
+    const regions = [
+        { code: 'gangbuk', name: '강북', manager: '김현진' },
+        { code: 'gangnam', name: '강남', manager: '임은호' },
+        { code: 'gyeongin', name: '경인', manager: '윤성준' },
+        { code: 'busan', name: '부산', manager: '조혜린' },
+        { code: 'jungbu', name: '중부', manager: '최장민' },
+        { code: 'daegu', name: '대구', manager: '김줄기' },
+        { code: 'honam', name: '호남', manager: '김경보' }
+    ];
+
+    const centerData = {
+        'busan': ['남부산', '부산중앙', '금정동래', '부산', '창원', '마산', '진주', '통영거제'],
+        'gangbuk': ['광화문', '서대문', '종로', '은평'],
+        'gangnam': ['강남', '서초', '송파', '강동'],
+        'gyeongin': ['인천', '수원', '성남', '부천'],
+        'jungbu': ['대전', '청주', '천안', '세종'],
+        'daegu': ['대구', '구미', '포항', '경주'],
+        'honam': ['광주', '전주', '목포', '순천']
+    };
+
+    let calendar;
+    let currentRegionCode = null;
+    let selectedDate = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        renderRegionList();
+        populateTimeOptions();
+        initCalendar();
+    });
+
+    function renderRegionList() {
+        const list = document.getElementById('region-list');
+        list.innerHTML = '';
+        regions.forEach(r => {
+            const card = document.createElement('div');
+            card.className = 'region-card';
+            card.innerHTML = `<div class="region-name">${r.name}</div><div class="manager-name">담당: ${r.manager}</div>`;
+            card.onclick = () => selectRegion(r);
+            list.appendChild(card);
+        });
+    }
+
+    function selectRegion(region) {
+        currentRegionCode = region.code;
+        document.getElementById('region-selector').style.display = 'none';
+        document.getElementById('calendar-view').style.display = 'block';
+        document.getElementById('current-region-title').innerText = `${region.name} 권역 (${region.manager}) 일정`;
+        setTimeout(() => { calendar.updateSize(); calendar.refetchEvents(); }, 100);
+    }
+
+    function resetRegion() {
+        currentRegionCode = null;
+        document.getElementById('calendar-view').style.display = 'none';
+        document.getElementById('region-selector').style.display = 'flex';
+    }
+
+    function initCalendar() {
+        var calendarEl = document.getElementById('calendar');
+        calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            locale: 'ko',
+            height: 'auto',
+            selectable: true,
+            headerToolbar: { left: 'today', center: 'prev title next', right: '' },
+            buttonText: { prev: '<', next: '>' },
+            
+            events: function(info, successCallback, failureCallback) {
+                if (!currentRegionCode) { successCallback([]); return; }
+                fetch('/api/events').then(response => response.json()).then(events => {
+                    const filteredEvents = events.filter(e => {
+                        // [수정] 전체 휴일 및 현재 권역 휴일 필터링
+                        if(e.extendedProps.type === 'holiday') {
+                            return e.extendedProps.region === 'all' || e.extendedProps.region === currentRegionCode;
+                        }
+                        return e.extendedProps.region === currentRegionCode;
+                    });
+                    successCallback(filteredEvents);
+                }).catch(err => failureCallback(err));
+            },
+
+            select: function(info) {
+                const dateStr = info.startStr;
+                const day = info.start.getDay();
+                if (day === 0 || day === 6) { alert("주말은 예약할 수 없습니다."); calendar.unselect(); return; }
+
+                // [수정] 해당 날짜의 휴일(전체 포함) 확인
+                const eventsOnDay = calendar.getEvents().filter(e => {
+                    return e.startStr === dateStr && e.extendedProps.type === 'holiday';
+                });
+
+                if (eventsOnDay.length > 0) {
+                    alert(`관리자가 일정을 제한한 날짜입니다.\n사유: ${eventsOnDay[0].title.replace('⛔ ','')}`);
+                    calendar.unselect(); return;
+                }
+                openModal(dateStr);
+                calendar.unselect();
+            },
+
+            eventClick: function(info) {
+                if (info.event.extendedProps.type === 'holiday') return;
+                const pwd = prompt("일정을 삭제하려면 비밀번호를 입력하세요:");
+                if (!pwd) return;
+                fetch('/api/delete', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ id: info.event.id, pwd: pwd })
+                }).then(res => res.json()).then(data => {
+                    if(data.status === 'success') { alert("삭제되었습니다."); calendar.refetchEvents(); }
+                    else { alert(data.message); }
+                });
+            }
+        });
+        calendar.render();
+    }
+
+    function openModal(date) {
+        selectedDate = date;
+        document.getElementById('modalDateTitle').innerText = `${date} 예약`;
+        const centerSelect = document.getElementById('center'); centerSelect.innerHTML = '<option value="">선택하세요</option>';
+        if (centerData[currentRegionCode]) { centerData[currentRegionCode].forEach(c => { centerSelect.innerHTML += `<option value="${c}">${c}</option>`; }); }
+        centerSelect.innerHTML += '<option value="direct">직접 입력</option>';
+        const topicSelect = document.getElementById('topic'); topicSelect.innerHTML = '<option value="">선택하세요</option>';
+        fetch(`/api/topics?region=${currentRegionCode}`).then(res => res.json()).then(data => { data.forEach(t => { topicSelect.innerHTML += `<option value="${t.title}">${t.title}</option>`; }); });
+        document.getElementById('center-direct').style.display = 'none'; document.getElementById('applicant').value = ''; document.getElementById('contact').value = ''; document.getElementById('pwd').value = '';
+        document.getElementById('bookingModal').style.display = 'block';
+    }
+
+    function closeModal() { document.getElementById('bookingModal').style.display = 'none'; }
+    function submitSchedule() {
+        let center=document.getElementById('center').value; if(center==='direct')center=document.getElementById('center-direct').value;
+        const topic=document.getElementById('topic').value; let startT=document.getElementById('start-time').value; if(startT==='direct')startT=document.getElementById('start-time-direct').value; let endT=document.getElementById('end-time').value; if(endT==='direct')endT=document.getElementById('end-time-direct').value;
+        const applicant=document.getElementById('applicant').value; const pwd=document.getElementById('pwd').value;
+        if(!center||!topic||!startT||!endT||!applicant||!pwd){alert("필수 항목 입력");return;} if(startT>=endT){alert("시간 오류");return;}
+        fetch('/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({region:currentRegionCode,center:center,topic:topic,applicant:applicant,contact:document.getElementById('contact').value,pwd:pwd,start:`${selectedDate}T${startT}`,end:`${selectedDate}T${endT}`})}).then(res=>res.json()).then(data=>{if(data.status==='success'){alert("예약 완료");closeModal();calendar.refetchEvents();}else if(data.status==='warning'){alert(data.message);closeModal();calendar.refetchEvents();}else{alert(data.message);}});
+    }
+    function populateTimeOptions() { const create=(id)=>{const sel=document.getElementById(id);sel.innerHTML='<option value="">선택</option>';for(let i=9;i<=18;i++){const t=(i<10?'0'+i:i)+":00";sel.innerHTML+=`<option value="${t}">${t}</option>`;if(i<18){const t2=(i<10?'0'+i:i)+":30";sel.innerHTML+=`<option value="${t2}">${t2}</option>`;}}sel.innerHTML+='<option value="direct">직접 입력</option>';}; create('start-time'); create('end-time'); }
+    function toggleDirectInput(s,i){document.getElementById(i).style.display=(document.getElementById(s).value==='direct')?'block':'none';}
+    window.onclick=function(e){if(e.target==document.getElementById('bookingModal'))closeModal();}
+</script>
+</body>
+</html>
