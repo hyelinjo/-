@@ -1,50 +1,28 @@
-import { holidays } from "@kyungseopk1m/holidays-kr";
+"use client"; // Convert to Client Component
+
+import { useState, useEffect } from "react";
+import holidaysJson from "@/app/data/holidays.json";
 import Scheduler from "@/components/Scheduler";
-import { getEvents, getRegions } from "@/lib/pythonApi"; // Import Python API functions
 
-export default async function Home() {
-  let holidaysData = [];
-  let initialEvents = [];
-  let regions = [];
-  let initialRegion = "gangnam"; // Default region, can be set dynamically later
+export default function Home() {
+  const [holidaysData, setHolidaysData] = useState([]);
+  const [initialEvents, setInitialEvents] = useState([]);
 
-  try {
-    // 1. 공공데이터 휴일 정보 가져오기
-    //console.log("📡 공공데이터 요청 중...");
-    const response = await holidays("2026");
-    let items = null;
+  // Hardcoded regions from the backend for static deployment
+  const regions = ['gangbuk', 'gangnam', 'gyeongin', 'busan', 'jungbu', 'daegu', 'honam'];
+  const initialRegion = regions[0] || "gangnam"; // Default region
 
-    if (Array.isArray(response.data)) {
-      items = response.data;
-    }
+  useEffect(() => {
+    // Load static holiday data
+    const allHolidays = Object.values(holidaysJson).flat().map(h => ({
+      ...h,
+      date: h.date.toString() // Ensure date is string if needed by component
+    }));
+    setHolidaysData(allHolidays);
 
-    if (items) {
-      holidaysData = Array.isArray(items) ? items : [items];
-    } else {
-      console.warn("⚠️ 데이터를 찾았으나, 예상된 경로(items.item)에 데이터가 없습니다.");
-      console.log("실제 데이터 내용:", JSON.stringify(response, null, 2).slice(0, 200) + "...");
-    }
-
-    // 2. Python Backend에서 지역 목록 가져오기
-    regions = await getRegions();
-    if (regions.length > 0) {
-      initialRegion = regions[0]; // Set initial region to the first available region
-    }
-    // Optionally add 'all' as a region if needed, but it's not in Topic model
-    // if (!regions.includes('all')) {
-    //   regions.unshift('all');
-    // }
-    // if (!regions.includes(initialRegion)) {
-    //   initialRegion = regions[0] || '';
-    // }
-
-
-    // 3. Python Backend에서 초기 일정 가져오기 (기본 지역에 대해)
-    initialEvents = await getEvents(initialRegion);
-
-  } catch (e) {
-    console.error("❌ 데이터 가져오기 실패:", e);
-  }
+    // initialEvents are intentionally left empty as the backend is not available.
+    // setInitialEvents([]);
+  }, []); // Empty dependency array ensures this runs once on mount
 
   return (
     <main>

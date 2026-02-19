@@ -1,27 +1,28 @@
 import os
-from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func, and_
 from datetime import datetime
 import pandas as pd
 import io
 
-app = Flask(__name__)
+# Point static folder to Next.js build output
+app = Flask(__name__, static_folder='../out', static_url_path='')
 app.secret_key = 'kyobo_key_secret'
 
 # DB 설정
 basedir = os.path.abspath(os.path.dirname(__file__))
-print(f"DEBUG: basedir resolved to: {basedir}") # New debug print
-db_path = os.path.join(basedir, 'schedule.db')
-print(f"DEBUG: Constructed db_path: {db_path}") # New debug print
-SQLALCHEMY_DATABASE_URI = 'sqlite:///' + db_path.replace('\\', '/') # Ensure forward slashes for URI
+# print(f"DEBUG: basedir resolved to: {basedir}") 
+db_path = os.path.join(basedir, 'schedule_v3.db')
+# print(f"DEBUG: Constructed db_path: {db_path}") 
+SQLALCHEMY_DATABASE_URI = 'sqlite:///' + db_path.replace('\\', '/') 
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-print(f"DEBUG: Final SQLALCHEMY_DATABASE_URI: {SQLALCHEMY_DATABASE_URI}") # New debug print
+# print(f"DEBUG: Final SQLALCHEMY_DATABASE_URI: {SQLALCHEMY_DATABASE_URI}") 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ECHO'] = True # Enable SQL query logging
+app.config['SQLALCHEMY_ECHO'] = True 
 
 db = SQLAlchemy(app)
-print(f"DEBUG: Using database at: {db_path}") # This print is now slightly redundant, but can stay.
+# print(f"DEBUG: Using database at: {db_path}") 
 
 
 # --- 모델 정의 ---
@@ -61,9 +62,14 @@ def init_db_data():
         db.session.commit()
 
 # --- 라우트 ---
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        # SPA Fallback or Root
+        return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/admin')
 def admin():
@@ -340,4 +346,4 @@ if __name__ == '__main__':
         db.create_all()
         init_db_data()
         print("DEBUG: Database created and initialized.")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
